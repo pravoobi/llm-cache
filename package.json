@@ -36,6 +36,15 @@
     "pg": { "optional": true },
     "@xenova/transformers": { "optional": true }
   },
+  "author": "Venkata Praveen Kumar Velisetty",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pravoobi/llm-cache.git"
+  },
+  "homepage": "https://github.com/pravoobi/llm-cache#readme",
+  "bugs": {
+    "url": "https://github.com/pravoobi/llm-cache/issues"
+  },
   "devDependencies": {
     "typescript": "^5.4.0",
     "tsup": "^8.0.0",
