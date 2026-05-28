@@ -1,4 +1,4 @@
-# llm-cache
+# @pravoobi/llm-cache
 
 Semantic caching layer for LLM calls. Deduplicates near-identical prompts using embeddings, saving cost and latency. Provider-agnostic, store-agnostic, TypeScript-first, zero required dependencies.
 
@@ -30,7 +30,7 @@ Exact matches are free (SHA-256 hash lookup). Semantic matches cost one embeddin
 ## Install
 
 ```bash
-npm install llm-cache
+npm install @pravoobi/llm-cache
 ```
 
 Install the peer dep for your chosen embedder:
@@ -67,7 +67,7 @@ npm install pg
 ## Quick start
 
 ```ts
-import { createCache } from 'llm-cache'
+import { createCache } from '@pravoobi/llm-cache'
 
 const cache = createCache({
   embedder: { provider: 'openai', apiKey: process.env.OPENAI_API_KEY },
@@ -90,7 +90,7 @@ console.log(result.layer)   // 'exact' | 'semantic' | 'miss'
 ### `createCache(config)`
 
 ```ts
-import { createCache } from 'llm-cache'
+import { createCache } from '@pravoobi/llm-cache'
 
 const cache = createCache({
   embedder: { provider: 'openai', apiKey: '...' }, // or a custom EmbedFn
@@ -244,7 +244,7 @@ createCache({
 ### In-memory (default)
 
 ```ts
-import { createCache, memoryStore } from 'llm-cache'
+import { createCache, memoryStore } from '@pravoobi/llm-cache'
 
 createCache({ embedder: ..., store: memoryStore() })
 // or just omit `store` — memory is the default
@@ -256,7 +256,7 @@ Not persistent across restarts. Suitable for single-process, development, or sho
 
 ```ts
 import Redis from 'ioredis'
-import { createCache, redisStore } from 'llm-cache'
+import { createCache, redisStore } from '@pravoobi/llm-cache'
 
 const client = new Redis({ host: 'localhost', port: 6379 })
 createCache({ embedder: ..., store: redisStore(client) })
@@ -266,7 +266,7 @@ createCache({ embedder: ..., store: redisStore(client) })
 
 ```ts
 import Database from 'better-sqlite3'
-import { createCache, sqliteStore } from 'llm-cache'
+import { createCache, sqliteStore } from '@pravoobi/llm-cache'
 
 const db = new Database('./cache.db')
 createCache({ embedder: ..., store: sqliteStore(db) })
@@ -278,7 +278,7 @@ Good for single-process, persistent, no-infra setups.
 
 ```ts
 import { Pool } from 'pg'
-import { createCache, pgvectorStore } from 'llm-cache'
+import { createCache, pgvectorStore } from '@pravoobi/llm-cache'
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL })
 createCache({ embedder: ..., store: pgvectorStore(pool) })

@@ -1,5 +1,5 @@
 {
-  "name": "llm-cache",
+  "name": "@pravoobi/llm-cache",
   "version": "0.1.0",
   "description": "Semantic caching layer for LLM calls. Deduplicates near-identical prompts using embeddings.",
   "main": "./dist/index.js",
