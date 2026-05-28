@@ -1,0 +1,33 @@
+name: Publish to npm
+
+on:
+  release:
+    types: [published]
+
+# id-token: write lets GitHub Actions request an OIDC token that npm exchanges
+# for a short-lived publish credential — no NPM_TOKEN secret required.
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: npm-publish   # matches the environment name set in npmjs.com trusted publisher config
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+          cache: 'npm'
+
+      - run: npm ci
+
+      - run: npm test
+
+      - run: npm run build
+
+      - name: Publish to npm (trusted publisher — no token needed)
+        run: npm publish
