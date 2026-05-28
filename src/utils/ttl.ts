@@ -7,6 +7,6 @@ export function isExpired(entry: CacheEntry): boolean {
 
 // Returns undefined when ttlSeconds is 0, meaning the entry never expires.
 export function computeExpiresAt(ttlSeconds: number): number | undefined {
-  if (ttlSeconds === 0) return undefined
+  if (ttlSeconds <= 0) return undefined
   return Date.now() + ttlSeconds * 1000
 }

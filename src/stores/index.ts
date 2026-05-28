@@ -1,4 +1,5 @@
 export { memoryStore } from './memory'
+export { hnswMemoryStore } from './hnsw-memory'
 export { redisStore } from './redis'
 export { sqliteStore } from './sqlite'
 export { pgvectorStore } from './pgvector'

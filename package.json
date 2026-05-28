@@ -1,6 +1,6 @@
 {
   "name": "@pravoobi/llm-cache",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "description": "Semantic caching layer for LLM calls. Deduplicates near-identical prompts using embeddings.",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
@@ -26,7 +26,8 @@
     "ioredis": ">=5.0.0",
     "better-sqlite3": ">=9.0.0",
     "pg": ">=8.0.0",
-    "@xenova/transformers": ">=2.0.0"
+    "@xenova/transformers": ">=2.0.0",
+    "hnswlib-node": ">=3.0.0"
   },
   "peerDependenciesMeta": {
     "openai": { "optional": true },
@@ -34,7 +35,8 @@
     "ioredis": { "optional": true },
     "better-sqlite3": { "optional": true },
     "pg": { "optional": true },
-    "@xenova/transformers": { "optional": true }
+    "@xenova/transformers": { "optional": true },
+    "hnswlib-node": { "optional": true }
   },
   "author": "Venkata Praveen Kumar Velisetty",
   "repository": {
@@ -58,7 +60,7 @@
   },
   "keywords": ["llm", "cache", "semantic", "embeddings", "openai", "anthropic", "ai"],
   "license": "MIT",
-  "engines": { "node": ">=18.0.0" },
+  "engines": { "node": ">=20.0.0" },
   "publishConfig": {
     "access": "public",
     "provenance": true

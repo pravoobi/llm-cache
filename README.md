@@ -60,6 +60,9 @@ npm install better-sqlite3
 
 # Postgres / pgvector
 npm install pg
+
+# In-process ANN index (hnswMemoryStore — for >10k entries without a database)
+npm install hnswlib-node
 ```
 
 ---
@@ -134,7 +137,50 @@ const result = await cache.wrap(
 | `matchedPrompt` | `string?` | The original prompt that was matched (semantic hits only) |
 | `namespace` | `string?` | The namespace used for this call |
 
-> **Streaming is not supported.** If `fn()` returns a `ReadableStream` or async iterable, `wrap()` will throw. Collect the full response before passing it to `wrap()`, or use `bypass: true`.
+> **Streaming:** Use `wrapStream()` for streaming LLM calls — see below. Passing a stream directly to `wrap()` will throw.
+
+---
+
+### `cache.wrapStream(prompt, fn, options?)`
+
+For streaming LLM responses. Yields chunks to the caller in real-time while assembling the full response for the cache in the background. On a cache hit, replays the cached response as a synthetic stream so the caller always gets an `AsyncIterable<T>` regardless of hit or miss.
+
+Returns `{ stream: AsyncIterable<T>, result: Promise<StreamCacheResult> }`.
+
+```ts
+const { stream, result } = cache.wrapStream(
+  prompt,
+  () => openai.chat.completions.create({ stream: true, ... }),
+  {
+    // Collapse provider-specific chunk shape into the cached value
+    assemble: (chunks) =>
+      chunks.map(c => c.choices[0]?.delta.content ?? '').join(''),
+    // Replay the cached string as a single chunk on a hit
+    reconstruct: async function* (text) {
+      yield { choices: [{ delta: { content: text } }] }
+    },
+    // All CacheOptions (threshold, ttl, namespace, context, bypass) work here too
+  }
+)
+
+for await (const chunk of stream) {
+  process.stdout.write(chunk.choices[0]?.delta.content ?? '')
+}
+
+const { hit, layer, similarity } = await result  // resolves after stream ends
+```
+
+**`StreamCacheResult`**:
+
+| Field | Type | Description |
+|---|---|---|
+| `hit` | `boolean` | Whether it was served from cache |
+| `layer` | `"exact" \| "semantic" \| "miss"` | Which cache layer matched |
+| `similarity` | `number?` | Cosine similarity score (semantic hits only) |
+| `matchedPrompt` | `string?` | The original prompt matched (semantic hits only) |
+| `namespace` | `string?` | The namespace used for this call |
+
+If `assemble` / `reconstruct` are omitted, string chunks are joined by default and the assembled string is replayed as a single chunk on a hit.
 
 ---
 
@@ -250,7 +296,23 @@ createCache({ embedder: ..., store: memoryStore() })
 // or just omit `store` — memory is the default
 ```
 
-Not persistent across restarts. Suitable for single-process, development, or short-lived workloads.
+Not persistent across restarts. Suitable for single-process, development, or short-lived workloads. Uses O(n) linear scan for similarity search — switch to `hnswMemoryStore` when entry count exceeds ~10k.
+
+### In-memory with ANN index (hnswMemoryStore)
+
+Drop-in replacement for `memoryStore()` that uses an [HNSW](https://github.com/nmslib/hnswlib) index for O(log n) similarity search. No database required.
+
+```ts
+// Requires: npm install hnswlib-node
+import { createCache, hnswMemoryStore } from '@pravoobi/llm-cache'
+
+createCache({ embedder: ..., store: hnswMemoryStore() })
+```
+
+- Index is created lazily on first `set()` — dimension detected automatically
+- One index per namespace, so namespace isolation has no search overhead
+- Automatically resizes when capacity is exceeded
+- Not persistent across restarts
 
 ### Redis
 
@@ -281,10 +343,20 @@ import { Pool } from 'pg'
 import { createCache, pgvectorStore } from '@pravoobi/llm-cache'
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL })
+
+// Default dimension (1536) — OpenAI text-embedding-3-small/large, ada-002
 createCache({ embedder: ..., store: pgvectorStore(pool) })
+
+// Cohere embed-english-v3.0
+createCache({ embedder: ..., store: pgvectorStore(pool, { dimensions: 1024 }) })
+
+// Local model (Xenova/all-MiniLM-L6-v2)
+createCache({ embedder: ..., store: pgvectorStore(pool, { dimensions: 384 }) })
 ```
 
 Requires the [`pgvector`](https://github.com/pgvector/pgvector) Postgres extension. Best for multi-process, high-traffic production use. Uses native ANN similarity search via `ivfflat`.
+
+> **Changing dimensions on an existing table:** `CREATE TABLE IF NOT EXISTS` will not alter an existing column type. If you switch embedding models, run a migration (`ALTER TABLE llm_cache ALTER COLUMN embedding TYPE vector(1024)`) and rebuild the index before updating `dimensions`.
 
 ---
 
@@ -329,7 +401,7 @@ Embedding costs (e.g., `text-embedding-3-small` at $0.02/million tokens) are neg
 - **Highly personalized responses** — If the correct answer genuinely depends on who is asking, use per-user namespaces carefully or disable caching.
 - **Creative or stochastic tasks** — Caching "Write me a poem about autumn" means every user gets the same poem.
 - **Short TTLs with fast-changing data** — If your data changes faster than your TTL, stale hits cause more harm than cost savings justify.
-- **Streaming responses** — Not supported in v0.1. Collect the full response first.
+- **Truly unique streaming responses** — `wrapStream()` assembles and caches the response after the stream ends. If every prompt is unique and never repeated, you pay assembly overhead with no cache benefit; consider `bypass: true` for those calls.
 
 ---
 

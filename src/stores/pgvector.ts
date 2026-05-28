@@ -17,11 +17,19 @@ interface LlmCacheRow {
   expires_at: Date | null
 }
 
-// pgvector default dimension — callers using non-1536-dim models should adjust
-// the table DDL via a migration before using this store.
-const VECTOR_DIM = 1536
+export interface PgVectorStoreOptions {
+  // Embedding dimension. Must match the model you're using:
+  //   OpenAI text-embedding-3-small/large, ada-002 → 1536 (default)
+  //   Cohere embed-english-v3.0              → 1024
+  //   Xenova/all-MiniLM-L6-v2 (local)       → 384
+  // If the table already exists with a different dimension, ALTER the column
+  // in a migration first — pgvector will reject inserts with mismatched dims.
+  dimensions?: number
+}
 
-async function initSchema(pool: PgPool): Promise<void> {
+const DEFAULT_DIMENSIONS = 1536
+
+async function initSchema(pool: PgPool, dimensions: number): Promise<void> {
   // pgvector extension must be installed by a superuser before this runs.
   await pool.query('CREATE EXTENSION IF NOT EXISTS vector')
   await pool.query(`
@@ -29,7 +37,7 @@ async function initSchema(pool: PgPool): Promise<void> {
       key TEXT PRIMARY KEY,
       prompt TEXT NOT NULL,
       response JSONB,
-      embedding vector(${VECTOR_DIM}),
+      embedding vector(${dimensions}),
       namespace TEXT,
       created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
       expires_at TIMESTAMPTZ
@@ -54,9 +62,16 @@ function parseEmbedding(raw: string): number[] {
     .map(Number)
 }
 
-export function pgvectorStore(pool: unknown): StoreAdapter {
+export function pgvectorStore(pool: unknown, options?: PgVectorStoreOptions): StoreAdapter {
   const pg = pool as PgPool
-  const ready = initSchema(pg)
+  const rawDimensions = options?.dimensions ?? DEFAULT_DIMENSIONS
+  if (!Number.isInteger(rawDimensions) || rawDimensions < 1 || rawDimensions > 65535) {
+    throw new RangeError(
+      `[llm-cache] pgvectorStore: dimensions must be a positive integer ≤ 65535, got ${rawDimensions}`
+    )
+  }
+  const dimensions = rawDimensions
+  const ready = initSchema(pg, dimensions)
 
   return {
     async get(key: string): Promise<CacheEntry | null> {

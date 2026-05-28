@@ -261,4 +261,62 @@ describe('createCache', () => {
       expect(records).toHaveLength(0)
     })
   })
+
+  describe('searchSimilar branch (ANN store)', () => {
+    it('calls store.searchSimilar instead of listEmbeddings when available', async () => {
+      const embedder = fixedEmbedder([1, 0, 0])
+      const base = memoryStore()
+      const searchSimilar = vi.fn(async () => null)
+      const annStore: StoreAdapter = { ...base, searchSimilar }
+      const listSpy = vi.spyOn(annStore, 'listEmbeddings')
+
+      const cache = createCache({ embedder, store: annStore, threshold: 0.9 })
+      await cache.wrap('hello', async () => 'v')
+
+      expect(searchSimilar).toHaveBeenCalledOnce()
+      expect(listSpy).not.toHaveBeenCalled()
+    })
+
+    it('returns semantic hit from searchSimilar result', async () => {
+      const embedder = fixedEmbedder([1, 0, 0])
+      const base = memoryStore()
+
+      // Prime the underlying store with one entry via a plain cache instance
+      await createCache({ embedder, store: base }).wrap('original', async () => 'cached-value')
+      const [storedRecord] = await base.listEmbeddings()
+
+      const searchSimilar = vi.fn(async () => ({
+        record: storedRecord!,
+        similarity: 0.95,
+      }))
+      const annStore: StoreAdapter = { ...base, searchSimilar }
+      const cache = createCache({ embedder, store: annStore, threshold: 0.9 })
+
+      const fn = vi.fn(async () => 'should-not-be-called')
+      const result = await cache.wrap('similar prompt', fn)
+
+      expect(fn).not.toHaveBeenCalled()
+      expect(result.hit).toBe(true)
+      expect(result.layer).toBe('semantic')
+      expect(result.similarity).toBe(0.95)
+      expect(result.value).toBe('cached-value')
+      expect(searchSimilar).toHaveBeenCalledOnce()
+    })
+
+    it('falls back to listEmbeddings when searchSimilar throws', async () => {
+      const embedder = fixedEmbedder([1, 0, 0])
+      const base = memoryStore()
+      const onError = vi.fn()
+      const searchSimilar = vi.fn(async () => { throw new Error('ANN index unavailable') })
+      const annStore: StoreAdapter = { ...base, searchSimilar }
+
+      const cache = createCache({ embedder, store: annStore, threshold: 0.9, onError })
+      const fn = vi.fn(async () => 'fallback')
+      const result = await cache.wrap('hello', fn)
+
+      expect(onError).toHaveBeenCalledWith(expect.any(Error))
+      expect(result.hit).toBe(false)
+      expect(result.value).toBe('fallback')
+    })
+  })
 })

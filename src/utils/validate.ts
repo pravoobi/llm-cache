@@ -1,7 +1,8 @@
-import type { CacheEntry } from '../types'
+import type { CacheEntry, EmbeddingRecord } from '../types'
 
-// Minimal structural check before trusting data deserialized from an external store.
+// Minimal structural checks before trusting data deserialized from an external store.
 // Defends against a compromised or manually-edited store returning unexpected shapes.
+
 export function assertCacheEntry(val: unknown, source: string): CacheEntry {
   if (
     typeof val !== 'object' ||
@@ -13,4 +14,17 @@ export function assertCacheEntry(val: unknown, source: string): CacheEntry {
     throw new Error(`[llm-cache] Invalid cache entry shape from ${source}`)
   }
   return val as CacheEntry
+}
+
+export function assertEmbeddingRecord(val: unknown, source: string): EmbeddingRecord {
+  if (
+    typeof val !== 'object' ||
+    val === null ||
+    typeof (val as Record<string, unknown>)['key'] !== 'string' ||
+    !Array.isArray((val as Record<string, unknown>)['embedding']) ||
+    typeof (val as Record<string, unknown>)['createdAt'] !== 'number'
+  ) {
+    throw new Error(`[llm-cache] Invalid embedding record shape from ${source}`)
+  }
+  return val as EmbeddingRecord
 }

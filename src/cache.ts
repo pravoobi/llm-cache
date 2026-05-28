@@ -2,10 +2,11 @@ import type {
   LLMCacheConfig,
   CacheOptions,
   CacheResult,
+  CacheStreamOptions,
+  StreamCacheResult,
   StoreAdapter,
   EmbedFn,
   CacheEntry,
-  EmbeddingRecord,
 } from './types'
 import { createEmbedder } from './embedders/index'
 import { memoryStore } from './stores/memory'
@@ -72,7 +73,7 @@ export function createCache(config: LLMCacheConfig) {
     // with identical text but different contexts never produce a semantic hit.
     // The combined key is stored in EmbeddingRecord.namespace.
     const embeddingNamespace =
-      context !== undefined ? `${namespace ?? ''}__ctx__${context}` : namespace
+      context !== undefined ? JSON.stringify([namespace ?? '', context]) : namespace
 
     // --- Step 1: exact cache lookup ---
     try {
@@ -96,16 +97,13 @@ export function createCache(config: LLMCacheConfig) {
       return { value, hit: false, layer: 'miss' }
     }
 
-    // --- Step 2: embed + semantic lookup ---
+    // --- Step 2: embed ---
     let embedding: number[]
-    let records: EmbeddingRecord[]
 
     try {
       const raw = await embed(normalized)
       embedding = Array.from(raw)
-      records = await store.listEmbeddings(embeddingNamespace)
     } catch (err) {
-      // Cache infrastructure is unavailable; call fn() as a transparent fallback.
       config.onError?.(err instanceof Error ? err : new Error(String(err)))
       lifetime.misses++
       config.onMiss?.(prompt)
@@ -113,8 +111,12 @@ export function createCache(config: LLMCacheConfig) {
       return { value, hit: false, layer: 'miss' }
     }
 
+    // --- Step 3: similarity search (ANN if available, O(n) scan otherwise) ---
     try {
-      const match = findBestMatch(embedding, records, threshold)
+      const match =
+        typeof store.searchSimilar === 'function'
+          ? await store.searchSimilar(embedding, threshold, embeddingNamespace)
+          : findBestMatch(embedding, await store.listEmbeddings(embeddingNamespace), threshold)
       if (match !== null) {
         const matchedEntry = await store.get(match.record.key)
         if (matchedEntry !== null) {
@@ -149,15 +151,12 @@ export function createCache(config: LLMCacheConfig) {
     // Wrap the fn() in a non-streaming adapter before passing it to wrap().
     if (
       value instanceof ReadableStream ||
-      (typeof value === 'object' &&
-        value !== null &&
-        (Symbol.asyncIterator in (value as object) || Symbol.iterator in (value as object)) &&
-        typeof (value as { text?: unknown }).text !== 'string')
+      (typeof value === 'object' && value !== null && Symbol.asyncIterator in (value as object))
     ) {
       throw new Error(
-        '[llm-cache] Streaming responses cannot be cached. ' +
-          'Collect the full response before passing fn() to wrap(), ' +
-          'or use bypass: true to skip the cache for streaming calls.'
+        '[llm-cache] Streaming responses cannot be cached via wrap(). ' +
+          'Use wrapStream() for streaming LLM calls, or collect the full ' +
+          'response before passing fn() to wrap().'
       )
     }
 
@@ -188,6 +187,151 @@ export function createCache(config: LLMCacheConfig) {
       layer: 'miss',
       ...(namespace !== undefined ? { namespace } : {}),
     }
+  }
+
+  function defaultAssemble<T>(chunks: T[]): unknown {
+    if (chunks.length > 0 && chunks.every((c) => typeof c === 'string')) {
+      return (chunks as string[]).join('')
+    }
+    return chunks
+  }
+
+  async function* defaultReconstruct<T>(cached: unknown): AsyncIterable<T> {
+    yield cached as T
+  }
+
+  function wrapStream<T>(
+    prompt: string,
+    fn: () => AsyncIterable<T>,
+    options?: CacheStreamOptions<T>
+  ): { stream: AsyncIterable<T>; result: Promise<StreamCacheResult> } {
+    const assemble = options?.assemble ?? defaultAssemble<T>
+    const reconstruct = options?.reconstruct ?? defaultReconstruct<T>
+
+    let resolveResult!: (r: StreamCacheResult) => void
+    const result = new Promise<StreamCacheResult>((res) => {
+      resolveResult = res
+    })
+
+    async function* generate(): AsyncGenerator<T> {
+      if (options?.bypass === true) {
+        yield* fn()
+        resolveResult({ hit: false, layer: 'miss' })
+        return
+      }
+
+      const namespace = options?.namespace
+      const context = options?.context
+      const threshold = options?.threshold ?? globalThreshold
+      const ttl = options?.ttl ?? globalTtl
+
+      if (namespace !== undefined) lifetime.seenNamespaces.add(namespace)
+
+      const normalized = normalizePrompt(prompt)
+      const key = hashPrompt(namespace, context, normalized)
+      const embeddingNamespace =
+        context !== undefined ? `${namespace ?? ''}__ctx__${context}` : namespace
+
+      // --- Step 1: exact lookup ---
+      try {
+        const cached = await store.get(key)
+        if (cached !== null) {
+          lifetime.hits++
+          const streamResult: StreamCacheResult = {
+            hit: true,
+            layer: 'exact',
+            ...(namespace !== undefined ? { namespace } : {}),
+          }
+          config.onHit?.({ ...streamResult, value: cached.response })
+          resolveResult(streamResult)
+          yield* reconstruct(cached.response)
+          return
+        }
+      } catch (err) {
+        config.onError?.(err instanceof Error ? err : new Error(String(err)))
+        lifetime.misses++
+        config.onMiss?.(prompt)
+        yield* fn()
+        resolveResult({ hit: false, layer: 'miss' })
+        return
+      }
+
+      // --- Step 2: embed ---
+      let embedding: number[]
+
+      try {
+        const raw = await embed(normalized)
+        embedding = Array.from(raw)
+      } catch (err) {
+        config.onError?.(err instanceof Error ? err : new Error(String(err)))
+        lifetime.misses++
+        config.onMiss?.(prompt)
+        yield* fn()
+        resolveResult({ hit: false, layer: 'miss' })
+        return
+      }
+
+      // --- Step 3: similarity search (ANN if available, O(n) scan otherwise) ---
+      try {
+        const match =
+          typeof store.searchSimilar === 'function'
+            ? await store.searchSimilar(embedding, threshold, embeddingNamespace)
+            : findBestMatch(embedding, await store.listEmbeddings(embeddingNamespace), threshold)
+        if (match !== null) {
+          const matchedEntry = await store.get(match.record.key)
+          if (matchedEntry !== null) {
+            lifetime.hits++
+            lifetime.similarities.push(match.similarity)
+            const streamResult: StreamCacheResult = {
+              hit: true,
+              layer: 'semantic',
+              similarity: match.similarity,
+              matchedPrompt: matchedEntry.prompt,
+              ...(namespace !== undefined ? { namespace } : {}),
+            }
+            config.onHit?.({ ...streamResult, value: matchedEntry.response })
+            resolveResult(streamResult)
+            yield* reconstruct(matchedEntry.response)
+            return
+          }
+        }
+      } catch (err) {
+        config.onError?.(err instanceof Error ? err : new Error(String(err)))
+      }
+
+      // --- Step 3: miss — stream from fn(), collect chunks, store after completion ---
+      lifetime.misses++
+      config.onMiss?.(prompt)
+
+      const chunks: T[] = []
+      // fn() errors propagate — never cache a partial or failed response.
+      for await (const chunk of fn()) {
+        chunks.push(chunk)
+        yield chunk
+      }
+
+      const assembled = assemble(chunks)
+      const now = Date.now()
+      const expiresAt = ttl !== undefined ? computeExpiresAt(ttl) : undefined
+      const entry: CacheEntry = {
+        prompt: normalized,
+        response: assembled,
+        embedding,
+        createdAt: now,
+        ...(embeddingNamespace !== undefined ? { namespace: embeddingNamespace } : {}),
+        ...(expiresAt !== undefined ? { expiresAt } : {}),
+      }
+
+      try {
+        await store.set(key, entry, ttl)
+      } catch (err) {
+        config.onError?.(err instanceof Error ? err : new Error(String(err)))
+      }
+
+      resolveResult({ hit: false, layer: 'miss', ...(namespace !== undefined ? { namespace } : {}) })
+    }
+
+    return { stream: generate(), result }
   }
 
   async function invalidate(
@@ -233,5 +377,5 @@ export function createCache(config: LLMCacheConfig) {
     }
   }
 
-  return { wrap, invalidate, flush, stats: getStats }
+  return { wrap, wrapStream, invalidate, flush, stats: getStats }
 }

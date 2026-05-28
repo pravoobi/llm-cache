@@ -1,5 +1,5 @@
 import type { StoreAdapter, CacheEntry, EmbeddingRecord } from '../types'
-import { assertCacheEntry } from '../utils/validate'
+import { assertCacheEntry, assertEmbeddingRecord } from '../utils/validate'
 
 // Minimal interface to avoid a hard compile-time dep on better-sqlite3.
 interface BetterSqliteDb {
@@ -97,12 +97,18 @@ export function sqliteStore(db: unknown): StoreAdapter {
               created_at: number
             }>)
 
-      return rows.map((row) => ({
-        key: row.key,
-        embedding: JSON.parse(row.embedding) as number[],
-        createdAt: row.created_at,
-        ...(row.namespace !== null ? { namespace: row.namespace } : {}),
-      }))
+      return rows.map((row) => {
+        const parsed = assertEmbeddingRecord(
+          {
+            key: row.key,
+            embedding: JSON.parse(row.embedding) as unknown,
+            createdAt: row.created_at,
+            ...(row.namespace !== null ? { namespace: row.namespace } : {}),
+          },
+          'sqlite'
+        )
+        return parsed
+      })
     },
   }
 }

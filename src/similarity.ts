@@ -32,12 +32,12 @@ export function findBestMatch(
   records: EmbeddingRecord[],
   threshold: number
 ): { record: EmbeddingRecord; similarity: number } | null {
-  // Linear scan becomes costly past ~10k vectors; pgvector or a vector DB should
-  // be used instead for production workloads at that scale.
+  // Linear scan becomes costly past ~10k vectors. Switch to hnswMemoryStore()
+  // for in-process ANN search, or pgvector for multi-process deployments.
   if (records.length > 10_000) {
     console.warn(
-      `[llm-cache] Scanning ${records.length} embeddings in memory. ` +
-        'Consider switching to pgvector or a dedicated vector store for better performance.'
+      `[llm-cache] Scanning ${records.length} embeddings with O(n) linear search. ` +
+        'Use hnswMemoryStore() for fast in-process ANN, or pgvector for multi-process deployments.'
     )
   }
 

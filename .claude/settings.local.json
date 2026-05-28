@@ -5,7 +5,9 @@
       "Bash(npx vitest *)",
       "Bash(npx tsc *)",
       "Bash(npm test *)",
-      "Bash(xargs ls *)"
+      "Bash(xargs ls *)",
+      "Bash(npm run *)",
+      "Bash(npm audit *)"
     ]
   }
 }

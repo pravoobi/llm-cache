@@ -1,5 +1,5 @@
 import type { StoreAdapter, CacheEntry, EmbeddingRecord } from '../types'
-import { assertCacheEntry } from '../utils/validate'
+import { assertCacheEntry, assertEmbeddingRecord } from '../utils/validate'
 
 // Typed minimally to avoid a hard compile-time dep on ioredis.
 interface RedisClient {
@@ -74,7 +74,7 @@ export function redisStore(client: unknown): StoreAdapter {
     async listEmbeddings(namespace?: string): Promise<EmbeddingRecord[]> {
       const hash = await redis.hgetall(nsHashKey(namespace))
       if (!hash) return []
-      return Object.values(hash).map((v) => JSON.parse(v) as EmbeddingRecord)
+      return Object.values(hash).map((v) => assertEmbeddingRecord(JSON.parse(v), 'redis'))
     },
 
     async close(): Promise<void> {
