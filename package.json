@@ -1,6 +1,6 @@
 {
   "name": "@pravoobi/llm-cache",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Semantic caching layer for LLM calls. Deduplicates near-identical prompts using embeddings.",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
