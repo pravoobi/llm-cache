@@ -1,0 +1,53 @@
+{
+  "name": "llm-cache",
+  "version": "0.1.0",
+  "description": "Semantic caching layer for LLM calls. Deduplicates near-identical prompts using embeddings.",
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsup src/index.ts --format cjs,esm --dts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint src --ext .ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "openai": ">=4.0.0",
+    "@anthropic-ai/sdk": ">=0.20.0",
+    "ioredis": ">=5.0.0",
+    "better-sqlite3": ">=9.0.0",
+    "pg": ">=8.0.0",
+    "@xenova/transformers": ">=2.0.0"
+  },
+  "peerDependenciesMeta": {
+    "openai": { "optional": true },
+    "@anthropic-ai/sdk": { "optional": true },
+    "ioredis": { "optional": true },
+    "better-sqlite3": { "optional": true },
+    "pg": { "optional": true },
+    "@xenova/transformers": { "optional": true }
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "tsup": "^8.0.0",
+    "vitest": "^1.6.0",
+    "@types/node": "^20.0.0",
+    "@types/better-sqlite3": "^7.0.0",
+    "@types/pg": "^8.0.0",
+    "eslint": "^8.0.0",
+    "@typescript-eslint/parser": "^7.0.0",
+    "@typescript-eslint/eslint-plugin": "^7.0.0"
+  },
+  "keywords": ["llm", "cache", "semantic", "embeddings", "openai", "anthropic", "ai"],
+  "license": "MIT",
+  "engines": { "node": ">=18.0.0" }
+}
